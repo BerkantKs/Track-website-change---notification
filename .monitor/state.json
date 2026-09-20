@@ -1,0 +1,10 @@
+{
+  "heartbeat_month": "2026-09",
+  "last_alert_at": "2026-09-20T16:32:57.880613Z",
+  "last_alert_kind": "queue",
+  "last_confirmed": null,
+  "queue_active": true,
+  "queue_event_id": "lrwrv2",
+  "schema_version": 1,
+  "unavailable_streak": 0
+}

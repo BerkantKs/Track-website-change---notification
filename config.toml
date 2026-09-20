@@ -1,0 +1,9 @@
+[product]
+name = "Nintendo Switch 2 Edition 40e anniversaire de The Legend of Zelda"
+sku = "P00211"
+url = "https://store.nintendo.com/fr-be/nintendo-switch-2-edition-40e-anniversaire-de-the-legend-of-zelda-P00211"
+
+[monitor]
+timeout_seconds = 10.0
+retries = 1
+user_agent = "NintendoStockMonitor/0.1 (personal availability checker)"
