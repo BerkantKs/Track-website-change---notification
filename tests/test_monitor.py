@@ -6,7 +6,7 @@ import pytest
 from nintendo_stock_monitor.config import MonitorConfig, ProductConfig
 from nintendo_stock_monitor.models import AlertKind, Availability
 from nintendo_stock_monitor.monitor import run_check
-from nintendo_stock_monitor.notifier import NtfyError, NtfySettings
+from nintendo_stock_monitor.notifier import GitHubSettings, NotificationError
 from nintendo_stock_monitor.state import StateError, load_state
 
 PRODUCT_URL = "https://store.nintendo.com/fr-be/product-P00211"
@@ -15,6 +15,7 @@ AVAILABLE_HTML = """
 {"@type":"Product","offers":{"availability":"https://schema.org/InStock"}}
 </script>
 """
+GITHUB_SETTINGS = GitHubSettings("token", "owner/repository", "owner")
 
 
 def config() -> MonitorConfig:
@@ -39,7 +40,7 @@ def test_successful_alert_is_persisted_and_not_repeated(tmp_path: Path) -> None:
 
     def notification_handler(request: httpx.Request) -> httpx.Response:
         notifications.append(request)
-        return httpx.Response(200, request=request)
+        return httpx.Response(201, request=request)
 
     with (
         product_client() as product_http,
@@ -48,14 +49,14 @@ def test_successful_alert_is_persisted_and_not_repeated(tmp_path: Path) -> None:
         first = run_check(
             config(),
             state_path,
-            ntfy_settings=NtfySettings("topic"),
+            github_settings=GITHUB_SETTINGS,
             product_client=product_http,
             notification_client=notification_http,
         )
         second = run_check(
             config(),
             state_path,
-            ntfy_settings=NtfySettings("topic"),
+            github_settings=GITHUB_SETTINGS,
             product_client=product_http,
             notification_client=notification_http,
         )
@@ -77,12 +78,12 @@ def test_failed_notification_does_not_advance_state(tmp_path: Path) -> None:
     with (
         product_client() as product_http,
         httpx.Client(transport=httpx.MockTransport(notification_handler)) as notification_http,
-        pytest.raises(NtfyError, match="HTTP 503"),
+        pytest.raises(NotificationError, match="HTTP 503"),
     ):
         run_check(
             config(),
             state_path,
-            ntfy_settings=NtfySettings("topic"),
+            github_settings=GITHUB_SETTINGS,
             product_client=product_http,
             notification_client=notification_http,
         )
@@ -99,7 +100,7 @@ def test_successful_notification_followed_by_save_failure_is_at_least_once(
 
     def notification_handler(request: httpx.Request) -> httpx.Response:
         notifications.append(request)
-        return httpx.Response(200, request=request)
+        return httpx.Response(201, request=request)
 
     def fail_save(*args, **kwargs) -> bool:
         raise StateError("simulated save failure")
@@ -114,7 +115,7 @@ def test_successful_notification_followed_by_save_failure_is_at_least_once(
         run_check(
             config(),
             state_path,
-            ntfy_settings=NtfySettings("topic"),
+            github_settings=GITHUB_SETTINGS,
             product_client=product_http,
             notification_client=notification_http,
         )
@@ -130,7 +131,7 @@ def test_dry_run_neither_notifies_nor_writes_state(tmp_path: Path) -> None:
         outcome = run_check(
             config(),
             state_path,
-            ntfy_settings=None,
+            github_settings=None,
             dry_run=True,
             product_client=product_http,
         )

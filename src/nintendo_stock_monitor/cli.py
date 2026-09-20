@@ -7,8 +7,8 @@ from typing import Any
 from nintendo_stock_monitor.config import ConfigError, load_config
 from nintendo_stock_monitor.monitor import run_check
 from nintendo_stock_monitor.notifier import (
-    NtfyError,
-    NtfySettings,
+    GitHubSettings,
+    NotificationError,
     build_test_notification,
     publish_notification,
 )
@@ -36,7 +36,7 @@ def _parser() -> argparse.ArgumentParser:
 
     test_parser = subparsers.add_parser(
         "test-notification",
-        help="Send a test message through ntfy",
+        help="Create a test GitHub Issue assigned to the configured user",
     )
     test_parser.add_argument("--config", type=Path, default=Path("config.toml"))
     return parser
@@ -49,11 +49,11 @@ def _print_json(payload: dict[str, Any], *, error: bool = False) -> None:
 
 def _run_check(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    ntfy_settings = None if args.dry_run else NtfySettings.from_environment()
+    github_settings = None if args.dry_run else GitHubSettings.from_environment()
     outcome = run_check(
         config,
         args.state_file,
-        ntfy_settings=ntfy_settings,
+        github_settings=github_settings,
         dry_run=args.dry_run,
     )
     _print_json(
@@ -73,7 +73,7 @@ def _run_check(args: argparse.Namespace) -> int:
 
 def _run_test_notification(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    settings = NtfySettings.from_environment()
+    settings = GitHubSettings.from_environment()
     publish_notification(settings, build_test_notification(config.product))
     _print_json({"notification_sent": True, "type": "test"})
     return EXIT_OK
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     except StateError as exc:
         _print_json({"error": "state", "message": str(exc)}, error=True)
         return EXIT_STATE
-    except NtfyError as exc:
+    except NotificationError as exc:
         _print_json({"error": "notification", "message": str(exc)}, error=True)
         return EXIT_NOTIFICATION
     except Exception as exc:

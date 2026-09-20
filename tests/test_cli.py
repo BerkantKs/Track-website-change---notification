@@ -4,19 +4,19 @@ from pathlib import Path
 from nintendo_stock_monitor import cli
 from nintendo_stock_monitor.models import AlertKind, Availability, CheckResult, Reason
 from nintendo_stock_monitor.monitor import RunOutcome
-from nintendo_stock_monitor.notifier import NtfyError
+from nintendo_stock_monitor.notifier import NotificationError
 from nintendo_stock_monitor.state import StateError
 
 
-def test_dry_run_does_not_require_ntfy_configuration(
+def test_dry_run_does_not_require_github_configuration(
     monkeypatch,
     tmp_path: Path,
     capsys,
 ) -> None:
-    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
 
     def fake_run_check(*args, **kwargs) -> RunOutcome:
-        assert kwargs["ntfy_settings"] is None
+        assert kwargs["github_settings"] is None
         assert kwargs["dry_run"] is True
         return RunOutcome(
             result=CheckResult(
@@ -49,8 +49,8 @@ def test_dry_run_does_not_require_ntfy_configuration(
     assert '"availability": "queue"' in capsys.readouterr().out
 
 
-def test_missing_notification_topic_returns_config_exit_code(monkeypatch, capsys) -> None:
-    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+def test_missing_github_token_returns_config_exit_code(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
 
     exit_code = cli.main(["check", "--config", "config.toml"])
 
@@ -72,10 +72,12 @@ def test_state_failure_returns_state_exit_code(monkeypatch, capsys) -> None:
 
 
 def test_notification_failure_returns_notification_exit_code(monkeypatch, capsys) -> None:
-    monkeypatch.setenv("NTFY_TOPIC", "private-topic")
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repository")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
 
     def fail_publish(*args, **kwargs):
-        raise NtfyError("ntfy notification failed")
+        raise NotificationError("GitHub Issue notification failed")
 
     monkeypatch.setattr(cli, "publish_notification", fail_publish)
 

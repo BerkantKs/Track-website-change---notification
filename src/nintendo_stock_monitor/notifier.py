@@ -9,42 +9,56 @@ from nintendo_stock_monitor.config import ConfigError, ProductConfig
 from nintendo_stock_monitor.models import AlertKind, CheckResult
 
 
-class NtfyError(RuntimeError):
-    """Raised when ntfy does not accept a notification."""
+class NotificationError(RuntimeError):
+    """Raised when GitHub does not accept a notification Issue."""
 
 
 @dataclass(frozen=True, slots=True)
-class NtfySettings:
-    topic: str
-    token: str | None = None
-    server_url: str = "https://ntfy.sh"
+class GitHubSettings:
+    token: str
+    repository: str
+    assignee: str
+    api_url: str = "https://api.github.com"
 
     @classmethod
-    def from_environment(cls, environment: Mapping[str, str] | None = None) -> "NtfySettings":
+    def from_environment(
+        cls,
+        environment: Mapping[str, str] | None = None,
+    ) -> "GitHubSettings":
         values = environment if environment is not None else os.environ
-        topic = values.get("NTFY_TOPIC", "").strip()
-        if not topic:
-            raise ConfigError("NTFY_TOPIC is required")
-        if any(character in topic for character in "/?#"):
-            raise ConfigError("NTFY_TOPIC must be a single topic name without /, ?, or #")
+        token = values.get("GITHUB_TOKEN", "").strip()
+        if not token:
+            raise ConfigError("GITHUB_TOKEN is required")
 
-        configured_server = values.get("NTFY_SERVER_URL", "").strip()
-        server_url = (configured_server or "https://ntfy.sh").rstrip("/")
-        parsed_server = urlparse(server_url)
-        if parsed_server.scheme not in {"http", "https"} or not parsed_server.hostname:
-            raise ConfigError("NTFY_SERVER_URL must be an absolute HTTP(S) URL")
+        repository = values.get("GITHUB_REPOSITORY", "").strip()
+        parts = repository.split("/")
+        if len(parts) != 2 or not all(parts):
+            raise ConfigError("GITHUB_REPOSITORY must use owner/repository format")
 
-        token = values.get("NTFY_TOKEN", "").strip() or None
-        return cls(topic=topic, token=token, server_url=server_url)
+        assignee = values.get("GITHUB_ASSIGNEE", "").strip()
+        if not assignee:
+            assignee = values.get("GITHUB_REPOSITORY_OWNER", "").strip()
+        if not assignee:
+            raise ConfigError("GITHUB_ASSIGNEE or GITHUB_REPOSITORY_OWNER is required")
+
+        configured_api_url = values.get("GITHUB_API_URL", "").strip()
+        api_url = (configured_api_url or "https://api.github.com").rstrip("/")
+        parsed_api_url = urlparse(api_url)
+        if parsed_api_url.scheme != "https" or not parsed_api_url.hostname:
+            raise ConfigError("GITHUB_API_URL must be an absolute HTTPS URL")
+
+        return cls(
+            token=token,
+            repository=repository,
+            assignee=assignee,
+            api_url=api_url,
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class Notification:
     title: str
-    message: str
-    priority: int
-    tags: tuple[str, ...]
-    click_url: str
+    body: str
 
 
 def build_notification(
@@ -52,43 +66,49 @@ def build_notification(
     product: ProductConfig,
     result: CheckResult,
 ) -> Notification:
+    checked_at = result.checked_at.isoformat().replace("+00:00", "Z")
+    product_link = f"[{product.name}]({product.url})"
     if alert_kind is AlertKind.AVAILABLE:
         return Notification(
-            title="Nintendo stock confirmed",
-            message=(
-                f"Purchase evidence is live for {product.name} ({product.sku}). "
-                "Open the Nintendo Store now."
+            title=f"Nintendo stock confirmed: {product.sku}",
+            body=(
+                "## Confirmed availability\n\n"
+                f"The monitor found purchase evidence for {product_link}.\n\n"
+                f"- SKU: `{product.sku}`\n"
+                f"- Signal: `{result.reason.value}`\n"
+                f"- Checked: `{checked_at}`\n\n"
+                f"[Open the Nintendo Store]({product.url})"
             ),
-            priority=5,
-            tags=("rotating_light", "video_game"),
-            click_url=product.url,
         )
 
-    event_detail = f" Queue event: {result.queue_event_id}." if result.queue_event_id else ""
+    event_line = f"- Queue event: `{result.queue_event_id}`\n" if result.queue_event_id else ""
     return Notification(
-        title="Nintendo waiting room active",
-        message=(
-            f"Nintendo activated a waiting room for {product.name} ({product.sku}). "
-            f"Stock is not confirmed; check the store manually.{event_detail}"
+        title=f"Nintendo waiting room active: {product.sku}",
+        body=(
+            "## Manual check recommended\n\n"
+            f"Nintendo activated a waiting room for {product_link}. "
+            "Stock is **not confirmed**.\n\n"
+            f"- SKU: `{product.sku}`\n"
+            f"{event_line}"
+            f"- Checked: `{checked_at}`\n\n"
+            f"[Open the Nintendo Store]({product.url})"
         ),
-        priority=3,
-        tags=("hourglass_flowing_sand", "video_game"),
-        click_url=product.url,
     )
 
 
 def build_test_notification(product: ProductConfig) -> Notification:
     return Notification(
-        title="Nintendo monitor test",
-        message="ntfy delivery is configured correctly. This is only a test.",
-        priority=3,
-        tags=("white_check_mark", "video_game"),
-        click_url=product.url,
+        title="Test: Nintendo stock monitor",
+        body=(
+            "GitHub Issue notifications are configured correctly. "
+            "This is only a test.\n\n"
+            f"[Open the configured product]({product.url})"
+        ),
     )
 
 
 def publish_notification(
-    settings: NtfySettings,
+    settings: GitHubSettings,
     notification: Notification,
     *,
     client: httpx.Client | None = None,
@@ -96,23 +116,29 @@ def publish_notification(
 ) -> None:
     owns_client = client is None
     http_client = client or httpx.Client(timeout=timeout_seconds)
+    owner, repository = settings.repository.split("/", maxsplit=1)
+    endpoint = (
+        f"{settings.api_url}/repos/{quote(owner, safe='')}/{quote(repository, safe='')}/issues"
+    )
     headers = {
-        "Title": notification.title,
-        "Priority": str(notification.priority),
-        "Tags": ",".join(notification.tags),
-        "Click": notification.click_url,
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {settings.token}",
+        "User-Agent": "NintendoStockMonitor/0.1",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
-    if settings.token:
-        headers["Authorization"] = f"Bearer {settings.token}"
+    payload = {
+        "title": notification.title,
+        "body": notification.body,
+        "assignees": [settings.assignee],
+    }
 
-    endpoint = f"{settings.server_url}/{quote(settings.topic, safe='')}"
     try:
-        response = http_client.post(endpoint, content=notification.message, headers=headers)
+        response = http_client.post(endpoint, json=payload, headers=headers)
         response.raise_for_status()
     except httpx.HTTPError as exc:
         status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
         suffix = f" (HTTP {status})" if status is not None else ""
-        raise NtfyError(f"ntfy notification failed{suffix}") from exc
+        raise NotificationError(f"GitHub Issue notification failed{suffix}") from exc
     finally:
         if owns_client:
             http_client.close()

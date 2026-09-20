@@ -7,7 +7,7 @@ from nintendo_stock_monitor.checker import check_product
 from nintendo_stock_monitor.config import MonitorConfig
 from nintendo_stock_monitor.models import AlertKind, CheckResult
 from nintendo_stock_monitor.notifier import (
-    NtfySettings,
+    GitHubSettings,
     build_notification,
     publish_notification,
 )
@@ -32,7 +32,7 @@ def run_check(
     config: MonitorConfig,
     state_path: Path,
     *,
-    ntfy_settings: NtfySettings | None,
+    github_settings: GitHubSettings | None,
     dry_run: bool = False,
     product_client: httpx.Client | None = None,
     notification_client: httpx.Client | None = None,
@@ -54,11 +54,11 @@ def run_check(
     next_state = decision.next_state
     notification_sent = False
     if decision.alert_kind is not None:
-        if ntfy_settings is None:
-            raise ValueError("ntfy_settings is required when an alert must be sent")
+        if github_settings is None:
+            raise ValueError("github_settings is required when an alert must be sent")
         notification = build_notification(decision.alert_kind, config.product, result)
         publish_notification(
-            ntfy_settings,
+            github_settings,
             notification,
             client=notification_client,
         )

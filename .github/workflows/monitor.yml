@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: nintendo-stock-monitor-${{ github.ref }}
@@ -43,17 +44,17 @@ jobs:
         id: check
         if: github.event_name == 'schedule' || inputs.operation == 'check'
         env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
-          NTFY_SERVER_URL: ${{ vars.NTFY_SERVER_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_ASSIGNEE: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: python -m nintendo_stock_monitor check
 
       - name: Send test notification
         if: github.event_name == 'workflow_dispatch' && inputs.operation == 'test-notification'
         env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
-          NTFY_SERVER_URL: ${{ vars.NTFY_SERVER_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_ASSIGNEE: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: python -m nintendo_stock_monitor test-notification
 
       - name: Commit monitor state

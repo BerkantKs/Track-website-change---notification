@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nintendo-stock-monitor"
 version = "0.1.0"
-description = "Conservative Nintendo Store availability monitor with ntfy notifications"
+description = "Conservative Nintendo Store availability monitor with GitHub notifications"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
